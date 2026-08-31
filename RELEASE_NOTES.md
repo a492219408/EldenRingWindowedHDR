@@ -14,7 +14,7 @@ First public release.
 ## Game build compatibility
 
 - App Ver. 1.17 / `eldenring.exe` 2.7.0.0 is statically and real-game tested.
-- App Ver. 1.16.2 / `eldenring.exe` 2.6.2.0 passes the same static target audit but has not yet been tested with this mod in the game.
+- App Ver. 1.16.2 / `eldenring.exe` 2.6.2.0 is statically and real-game tested with the same runtime resolver and HDR regression.
 - Unknown hashes are accepted only when all unique signatures, caller relationships, RTTI/vtable checks, security-cookie relocation, and memory boundaries pass. Otherwise the DLL keeps only diagnostic DXGI/AGS logging and leaves native HDR behavior unchanged.
 
-The core path has been verified on the current NVIDIA test system, including ordinary windowed mode, HDR on/off persistence, Windows HDR unavailable fallback, and movement between two HDR-enabled displays. AMD, Intel, Windows HDR hot changes, sleep/resume, and broad Overlay/MOD combinations remain incompletely tested.
+The core path has been verified on the current NVIDIA test system, including ordinary windowed mode and HDR on/off persistence on both listed game builds. The final cross-version runs also passed Alt+Tab and coexistence with UnlockTheFps. Windows HDR unavailable fallback and movement between two HDR-enabled displays were verified on 1.17. AMD, Intel, mixed HDR/SDR displays, Windows HDR hot changes, sleep/resume, and broad Overlay/MOD combinations remain incompletely tested.

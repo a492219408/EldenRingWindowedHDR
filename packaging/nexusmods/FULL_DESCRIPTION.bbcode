@@ -10,7 +10,7 @@ It is not a ReShade preset, color filter, or Auto HDR effect. The game's own HDR
 [size=4][b]Requirements[/b][/size]
 
 [list]
-[*]Elden Ring. App Ver. 1.17 / eldenring.exe 2.7.0.0 is the real-game-tested build.
+[*]Elden Ring. App Ver. 1.16.2 / eldenring.exe 2.6.2.0 and App Ver. 1.17 / eldenring.exe 2.7.0.0 are real-game-tested builds.
 [*]An HDR-capable display.
 [*]HDR enabled in Windows for the display showing the game.
 [*]ModEngine3.
@@ -37,11 +37,12 @@ The included configuration already enables the normal release mode. No manual IN
 [*]The DLL resolves internal targets only after unique executable-section signatures, caller relationships, RTTI/vtable data, and memory boundaries all pass.
 [*]It does not modify eldenring.exe, Windows HDR settings, the registry, graphics driver settings, or save files.
 [*]If an HDR requirement is missing, the mod safely leaves HDR unavailable instead of forcing an invalid color space.
-[*]HDR/SDR toggling, saved-state restoration, ordinary windowed mode, and movement between two HDR-enabled displays have been verified on the current NVIDIA test system.
+[*]HDR/SDR toggling, saved-state restoration, and ordinary windowed mode have been verified on both listed game builds on the current NVIDIA test system. The final cross-version runs also passed Alt+Tab and coexistence with UnlockTheFps.
+[*]Windows HDR unavailable fallback and movement between two HDR-enabled displays were additionally verified on App Ver. 1.17.
 [*]AMD, Intel, other hardware/display combinations, Windows HDR hot changes, sleep/resume, and broad Overlay/MOD combinations are not yet fully verified.
 [/list]
 
-App Ver. 1.16.2 / eldenring.exe 2.6.2.0 has passed a binary-level static compatibility audit, but has not yet been tested with this mod in the real game. A future game update may continue to work when all relevant structures are unchanged. Unknown builds are clearly marked in the log; any ambiguous or changed target falls back to native game behavior instead of forcing old addresses.
+Both listed game builds passed the same binary-level resolver and real-game HDR regression. A future game update may continue to work when all relevant structures are unchanged. Unknown builds are clearly marked in the log; any ambiguous or changed target falls back to native game behavior instead of forcing old addresses. An unknown build remains experimental until it receives its own static review and real-game regression.
 
 [size=4][b]Troubleshooting[/b][/size]
 

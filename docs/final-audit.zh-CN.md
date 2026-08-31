@@ -186,8 +186,8 @@ DLL/ZIP 哈希。HDR 候选判定、内部状态覆盖和 Present 前 PQ 状态�
 
 | App Ver. | 大小 | SHA-256 | 结果 |
 | --- | ---: | --- | --- |
-| 1.16.2 | 86,998,096 | `34102B1C08BB5F769A724427A6F70FE29B3B732C31CF73693F861C48D3492DDB` | 全部静态解析条件通过；未实机运行本 MOD |
-| 1.17 | 87,024,720 | `D1A84083C6C7C7902162FF098F7D86812839AA6B3575959398857E539C488134` | 全部静态解析条件通过；旧固定地址实现已有实机证据 |
+| 1.16.2 | 86,998,096 | `34102B1C08BB5F769A724427A6F70FE29B3B732C31CF73693F861C48D3492DDB` | 全部静态解析条件通过；本节后续实机验收通过 |
+| 1.17 | 87,024,720 | `D1A84083C6C7C7902162FF098F7D86812839AA6B3575959398857E539C488134` | 全部静态解析条件通过；旧固定地址及本节后续动态解析实现均有实机证据 |
 
 对两个真实磁盘 EXE 执行与运行时相同的签名和关系复核，均得到：公共可用性签名 1 个、直接
 调用者 2 个、HDR 灰显谓词 1 个、RTTI/COL 虚表 1 个且有 4 个可执行 `lea` 引用、配置复制
@@ -226,7 +226,7 @@ ZIP 校验文件与复算值一致，归档仍恰含 7 个玩家文件：`.me3`�
 许可证和第三方声明；不含 `docs`、`scripts`、日志、测试结果、PDB、游戏二进制或 Ghidra
 数据。Nexus Short description 为 253 字符，仍低于 350 字符限制。
 
-### 当前发布判定
+### 实机回归前发布判定（历史）
 
 静态实现、双版本解析、单元测试、Release 构建和玩家包审计均通过，没有发现可由本地检查
 确认的阻止问题。但当前 DLL 的动态解析器尚未在真实 `eldenring.exe` 进程中运行；旧 1.17
@@ -234,6 +234,77 @@ ZIP 校验文件与复算值一致，归档仍恰含 7 个玩家文件：`.me3`�
 游戏内执行。因此正式发布前仍需按 `docs/testing.zh-CN.md` 的“1.0.0 跨版本解析器短回归”
 在 1.17 完成两次启动，并保存含完整 `COMPATIBILITY` 闭环的日志。
 
-1.16.2 当前只能标记为“静态结构兼容，待实机验证”；未知哈希即使被自动接受，也只能标记
-为“结构兼容但未验证”。在 1.17 短回归完成前，当前包是可测试的发布候选，不应作为已经
-完成最终实机验收的正式版本发布。
+当时 1.16.2 只能标记为“静态结构兼容，待实机验证”；未知哈希即使被自动接受，也只能标记
+为“结构兼容但未验证”。在后续短回归完成前，该包只是可测试的发布候选。以下新一节记录
+随后完成的真实游戏验收，并取代本段发布判定。
+
+## 1.0.0 跨版本动态解析器实机验收
+
+验收日期：2026-08-31
+
+### 证据范围
+
+维护者使用 `dist\EldenRingWindowedHDR-1.0.0` 中的正式 DLL、INI 与 `.me3`，以发布默认
+`mode = windowed_hdr` 在两个已知版本各完成两次真实游戏启动：
+
+| 日志目录 | 指纹 | 场景与日志结果 |
+| --- | --- | --- |
+| `20260831-184648-v100-compat-117-borderless-resolve` | 1.17 / `D1A840...8134` | 无边框 `HDR→SDR→HDR`；PQ 成功 2 次、SDR 恢复成功 1 次 |
+| `20260831-184836-v100-compat-117-persist-windowed` | 1.17 / `D1A840...8134` | 打开设置页前自动恢复 HDR；普通窗口化 Resize 后重提交 PQ；SDR 恢复成功，随后额外重开 HDR 也成功 |
+| `20260831-190000-v100-compat-116-borderless-resolve` | 1.16.2 / `34102B...2DDB` | 无边框 `HDR→SDR→HDR`；PQ 成功 2 次、SDR 恢复成功 1 次 |
+| `20260831-190104-v100-compat-116-persist-windowed` | 1.16.2 / `34102B...2DDB` | 打开设置页前自动恢复 HDR；关闭后 SDR 恢复成功 |
+
+四份 `system.txt` 都记录了实际启动 EXE 的完整路径、大小、文件版本和 SHA-256，与目标指纹
+一致。测试环境为 Windows 11 build 26200、GeForce RTX 4090 D、驱动 `32.0.16.1074`、
+ASUS PG32UCDP（HDMI 2.1）；交换链输出为 `\\.\DISPLAY2`、10 bpc、PQ，峰值亮度日志为
+420 nits。
+
+### 兼容层与状态机审计
+
+每次启动均得到以下闭环：
+
+- 已知版本识别正确，但仍执行完整动态扫描；
+- 公共 HDR 可用性签名唯一、直接调用者恰为 2、菜单谓词候选唯一；
+- RTTI/COL 虚表唯一且有 4 个可执行 `lea` 引用；
+- 配置复制和后端查询签名各唯一，安全 Cookie 落在 `.data`；
+- 整组 RVA 与对应已知版本配置完全一致；
+- `hook summary` 的 `hdr_menu_gate`、`hdr_common_availability`、
+  `graphics_config_apply`、`hdr_backend_actual_query`、`hdr_backend_experiment`、
+  `hdr_color_space_sync` 与 `windowed_hdr` 全部为 `true`。
+
+四份日志合计记录 8 次受管 `enable_hdr_pq` 和 4 次 `restore_previous`，全部返回
+`HRESULT=0x00000000, success=true`。其中 1.17 持久化测试的三次 PQ 包含启动恢复、普通
+窗口化 `ResizeBuffers` 后的新代次重提交，以及维护者最后额外重开 HDR；这不是无界逐帧
+重试。日志没有 `COMPATIBILITY FAILURE`、安全回退、`SAFETY`、非零 HRESULT、设备移除、
+颜色空间所有权冲突或崩溃。
+
+维护者明确确认四次视觉观察全部正常。第一份 `observations.txt` 只填写了部分环境项，其余
+文件仍保留模板；因此视觉结论来自维护者随日志提交的明确说明，而非日志自动判定。四次均
+同时加载 UnlockTheFps，OBS 使用 P010/PQ 游戏源预览，Alt+Tab 未出现问题。该证据确认这个
+明确组合可以工作，但不能推导为所有 Overlay、捕获软件或 MOD 组合都兼容。
+
+### 最终发布判定
+
+动态目标解析、已知版本交叉核对、内部 Hook 安装、启动持久化、无边框/普通窗口态切换和
+Present 前 PQ/SDR 交接均已在 1.16.2 与 1.17 的当前 NVIDIA/HDR 环境通过。没有发现阻止
+1.0.0 正式发布的问题，当前玩家包可以作为正式版本发布。
+
+该结论仍不覆盖 AMD、Intel、HDR/SDR 混合显示器、显示器断连、Windows HDR 运行中热切换、
+休眠恢复、HDR 开启期间切换独占全屏或其他广泛 Overlay/MOD 组合。未来未知哈希即使通过
+严格结构解析，也必须继续标记为“结构兼容但未实机验证”，不能沿用 1.16.2/1.17 的验证状态。
+
+本轮又重新执行格式检查、带 `-D warnings` 的 Clippy、43/43 单元测试、x64 MSVC Release
+构建及三个 PowerShell 脚本的 AST 解析，全部通过。最终 DLL 为 COFF x86-64、64 位
+`IMAGE_FILE_DLL`，保留 ASLR、High Entropy VA、NX 与 CFG instrumentation，并导出
+`DllMain`、`elden_ring_windowed_hdr_init` 和旧兼容 initializer。构建目录与玩家包 DLL
+哈希一致。
+
+重建后的 ZIP 校验文件与复算值一致，归档恰含 7 个玩家文件：`.me3`、DLL、INI、双语 TXT
+README、许可证和第三方声明；源码 `docs`、`scripts`、`test-results`、日志、PDB、游戏
+二进制和 Ghidra 数据均未进入归档。全部打包源文件与归档前目录副本逐项同哈希，Nexus
+Short description 实际为 253 字符，低于 350 字符限制。本轮最终发布物：
+
+```text
+EldenRingWindowedHDR.dll SHA-256: 34990F3C9FC48C6D08D4D65F5B15047DB8813F25C8641BEFBF1CA969E2C32148
+EldenRingWindowedHDR-1.0.0.zip SHA-256: 9FD5665A37686A616805EDE6BED485ED21F9D96519F1E72DA3CF643D691A3091
+```
