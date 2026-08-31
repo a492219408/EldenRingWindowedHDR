@@ -14,16 +14,24 @@ HDR 渲染链。它不是 ReShade 预设、后处理滤镜或 Auto HDR，而是�
 使用要求
 --------
 
-- 《艾尔登法环》App Ver. 1.17，eldenring.exe 文件版本 2.7.0.0；
+- 《艾尔登法环》；当前实机验证版本为 App Ver. 1.17 / eldenring.exe 2.7.0.0；
 - 支持 HDR 的显示器；
 - 已在 Windows 中为当前显示游戏画面的显示器开启 HDR；
 - ModEngine3；
 - 关闭 Easy Anti-Cheat，仅限离线游玩。
 
-支持的 eldenring.exe 大小为 87,024,720 字节，SHA-256 为：
-D1A84083C6C7C7902162FF098F7D86812839AA6B3575959398857E539C488134
+已静态审计的版本：
 
-DLL 会在安装任何 Hook 前校验该指纹，不支持的游戏版本会安全拒绝运行。
+- App Ver. 1.16.2 / eldenring.exe 2.6.2.0；
+  大小 86,998,096 字节；
+  SHA-256 34102B1C08BB5F769A724427A6F70FE29B3B732C31CF73693F861C48D3492DDB。
+- App Ver. 1.17 / eldenring.exe 2.7.0.0；
+  大小 87,024,720 字节；
+  SHA-256 D1A84083C6C7C7902162FF098F7D86812839AA6B3575959398857E539C488134。
+
+1.17 已完成真实游戏测试；1.16.2 只完成二进制静态兼容性审计，尚未实际运行本 MOD。
+未来游戏版本若相关代码结构没有变化，DLL 会在严格检查通过后尝试继续工作；检查存在任何
+歧义时会安全保留游戏原生行为，并在日志中说明原因，而不是强行使用旧版本地址。
 
 安装和使用
 ----------
@@ -53,7 +61,8 @@ DLL 会在安装任何 Hook 前校验该指纹，不支持的游戏版本会安�
 --------
 
 - 确认显示游戏画面的显示器已在 Windows 中开启 HDR；
-- 确认游戏 EXE 与上面的受支持指纹一致；
+- 检查日志中的 COMPATIBILITY 行；若出现 COMPATIBILITY FAILURE，说明当前游戏版本或其他
+  MOD 改动了关键代码，本 MOD 不会启用窗口态 HDR；
 - 保持 EldenRingWindowedHDR.dll 与 EldenRingWindowedHDR.ini 同在 natives 文件夹中；
 - 如果同时使用会修改 DXGI 色彩空间或全屏状态的 MOD，可先暂时停用它们；
 - 反馈问题时请附上 natives/EldenRingWindowedHDR.log。该日志每次启动都会被覆盖，请在
@@ -65,6 +74,9 @@ DLL 会在安装任何 Hook 前校验该指纹，不支持的游戏版本会安�
 当前 NVIDIA 测试环境已确认 HDR/SDR 开关、状态跨启动恢复、普通窗口化，以及在两台均已
 开启 HDR 的显示器之间移动窗口和跨屏显示。AMD、Intel、其他驱动/显示器、Windows HDR
 运行时热切换、休眠恢复以及更多 Overlay/MOD 组合仍未完成全面验证。
+
+上述实机结果来自 App Ver. 1.17。App Ver. 1.16.2 和日志标记为“unknown executable
+accepted”的未来版本，在完成对应实机回归前只能视为实验性结构兼容。
 
 本 MOD 仅用于 ModEngine3 离线运行。请勿在绕过反作弊后进入官方匹配。
 

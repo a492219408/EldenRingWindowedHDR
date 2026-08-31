@@ -14,17 +14,27 @@ saved by the game. When HDR is turned off, the mod restores normal SDR output.
 REQUIREMENTS
 ------------
 
-- Elden Ring App Ver. 1.17 with eldenring.exe version 2.7.0.0.
+- Elden Ring. The real-game-tested build is App Ver. 1.17 with
+  eldenring.exe version 2.7.0.0.
 - An HDR-capable display.
 - HDR enabled in Windows for the display currently showing the game.
 - ModEngine3.
 - Easy Anti-Cheat disabled and offline play only.
 
-The supported eldenring.exe is exactly 87,024,720 bytes with SHA-256:
-D1A84083C6C7C7902162FF098F7D86812839AA6B3575959398857E539C488134
+Statically audited builds:
 
-The DLL checks this fingerprint before installing any hooks. Unsupported game
-versions are rejected safely.
+- App Ver. 1.16.2 / eldenring.exe 2.6.2.0;
+  size 86,998,096 bytes;
+  SHA-256 34102B1C08BB5F769A724427A6F70FE29B3B732C31CF73693F861C48D3492DDB.
+- App Ver. 1.17 / eldenring.exe 2.7.0.0;
+  size 87,024,720 bytes;
+  SHA-256 D1A84083C6C7C7902162FF098F7D86812839AA6B3575959398857E539C488134.
+
+App Ver. 1.17 has been tested in the real game. App Ver. 1.16.2 has passed a
+binary-level static compatibility audit but has not yet run this mod in the
+game. If a future update leaves the relevant code structure unchanged, the DLL
+can continue after strict validation. Any ambiguity safely preserves native
+game behavior and is explained in the log instead of using stale addresses.
 
 INSTALLATION AND USE
 --------------------
@@ -57,7 +67,9 @@ TROUBLESHOOTING
 ---------------
 
 - Confirm that Windows HDR is enabled on the display showing the game.
-- Confirm that the game executable matches the supported fingerprint above.
+- Check the COMPATIBILITY lines in the log. COMPATIBILITY FAILURE means the
+  current game build or another mod changed critical code, so this mod will not
+  enable windowed HDR.
 - Keep EldenRingWindowedHDR.dll and EldenRingWindowedHDR.ini together in the
   natives folder.
 - Temporarily disable other DXGI/HDR mods if they also change swap-chain color
@@ -72,6 +84,10 @@ The core HDR/SDR toggle, saved-state restoration, ordinary windowed mode, and
 movement between two HDR-enabled displays have been verified on the current
 NVIDIA test system. AMD, Intel, other drivers/displays, Windows HDR hot changes,
 sleep/resume, and broad overlay/mod combinations are not yet fully verified.
+
+Those real-game results are from App Ver. 1.17. App Ver. 1.16.2 and future
+builds logged as "unknown executable accepted" remain experimental until they
+receive their own real-game regression test.
 
 This mod is intended only for offline ModEngine3 use. Do not use it to enter
 official matchmaking with anti-cheat bypassed.

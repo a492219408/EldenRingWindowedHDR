@@ -16,6 +16,7 @@ const PAGE_EXECUTE: u32 = 0x10;
 const PAGE_EXECUTE_WRITECOPY: u32 = 0x80;
 const PAGE_READONLY: u32 = 0x02;
 const PAGE_READWRITE: u32 = 0x04;
+const PAGE_WRITECOPY: u32 = 0x08;
 const PAGE_NOACCESS: u32 = 0x01;
 const PAGE_GUARD: u32 = 0x100;
 const MEM_COMMIT: u32 = 0x1000;
@@ -162,6 +163,61 @@ pub unsafe fn address_is_executable(address: *const c_void) -> bool {
         && information.protect
             & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)
             != 0
+}
+
+pub unsafe fn range_is_readable(address: *const c_void, size: usize) -> bool {
+    if address.is_null() || size == 0 {
+        return false;
+    }
+
+    let start = address as usize;
+    let Some(end) = start.checked_add(size) else {
+        return false;
+    };
+    let mut current = start;
+    while current < end {
+        let mut information = MemoryBasicInformation {
+            base_address: ptr::null_mut(),
+            allocation_base: ptr::null_mut(),
+            allocation_protect: 0,
+            partition_id: 0,
+            region_size: 0,
+            state: 0,
+            protect: 0,
+            kind: 0,
+        };
+        let queried = unsafe {
+            VirtualQuery(
+                current as *const c_void,
+                &mut information,
+                std::mem::size_of::<MemoryBasicInformation>(),
+            )
+        };
+        if queried != std::mem::size_of::<MemoryBasicInformation>()
+            || information.state != MEM_COMMIT
+            || information.protect & (PAGE_NOACCESS | PAGE_GUARD) != 0
+            || information.protect
+                & (PAGE_READONLY
+                    | PAGE_READWRITE
+                    | PAGE_WRITECOPY
+                    | PAGE_EXECUTE_READ
+                    | PAGE_EXECUTE_READWRITE
+                    | PAGE_EXECUTE_WRITECOPY)
+                == 0
+        {
+            return false;
+        }
+
+        let region_start = information.base_address as usize;
+        let Some(region_end) = region_start.checked_add(information.region_size) else {
+            return false;
+        };
+        if region_end <= current {
+            return false;
+        }
+        current = region_end.min(end);
+    }
+    true
 }
 
 pub unsafe fn module_path(module: Module) -> Result<PathBuf, String> {

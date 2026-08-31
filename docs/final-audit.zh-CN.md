@@ -3,9 +3,12 @@
 > 本文前半部分保留 0.6.1 审计时的文件名、哈希和打包结论，作为历史证据；文末另列
 > `Elden Ring Native Windowed HDR` 1.0.0 的发布层变更，二者不可混用。
 
-审计日期：2026-08-31  
-目标游戏：App Ver. 1.17 / `eldenring.exe` 2.7.0.0  
-已实机验证实现：0.6.0 `windowed_hdr`  
+审计日期：2026-08-31
+
+目标游戏：App Ver. 1.17 / `eldenring.exe` 2.7.0.0
+
+已实机验证实现：0.6.0 `windowed_hdr`
+
 审计补丁版本：0.6.1
 
 ## 审计结论
@@ -127,7 +130,7 @@ mode = windowed_hdr
 
 真实游戏测试证据保留在本地 `EldenRingBorderlessHDR-0.6.0/test-results`，不纳入公开 ZIP。
 
-## 1.0.0 发布准备补充
+## 1.0.0 首次发布准备补充（跨版本兼容层之前）
 
 1.0.0 没有修改 `src/dxgi.rs`、`src/game_hdr.rs` 或 `src/windows.rs` 中已验证的 HDR/DXGI
 状态机。发布层变更如下：
@@ -143,7 +146,7 @@ mode = windowed_hdr
   `LICENSE.txt` 和 `THIRD_PARTY_NOTICES.txt`，并附独立 SHA-256 文件；
 - 新增 GitHub Actions：普通 push/PR 构建并上传 ZIP artifact，`v<版本>` 标签在与
   `Cargo.toml` 版本完全一致时创建或更新 GitHub Release；
-- MIT 主署名改为 `Luan (a492219408)`；第三方声明继续保留历史来源中的 `YmdElf` 与
+- MIT 主署名改为 `Luna (a492219408)`；第三方声明继续保留历史来源中的 `YmdElf` 与
   `Luca2040`。
 
 维护者在 0.6.x 核心实现上追加确认了 Windows HDR 关闭时安全保持不可用，以及两台均开启
@@ -168,3 +171,69 @@ initializer 和旧兼容 initializer。构建目录与打包目录中的 DLL 哈
 改名后的最终 DLL/INI/.me3 组合尚未由本环境启动真实游戏。发布标签前应按
 `docs/testing.zh-CN.md` 的“1.0.0 发布候选快速复核”完成三次启动并保存日志；在此之前，
 1.0.0 的结论是“静态与本地构建通过、核心状态机继承既有实测、最终发行物待实机复核”。
+
+## 1.0.0 跨版本兼容层后审计
+
+审计日期：2026-08-31
+
+本节覆盖前一节之后新增的 `src/game_compat.rs` 及其接入改动，并取代前一节记录的 1.0.0
+DLL/ZIP 哈希。HDR 候选判定、内部状态覆盖和 Present 前 PQ 状态机没有改变；改变的是四个
+游戏内部 Hook 目标的取得、版本判断和失败回退方式。
+
+### 双版本静态证据
+
+重新计算备份目录后确认同版本“有 DLC/无 DLC”EXE 字节一致，得到两个唯一目标：
+
+| App Ver. | 大小 | SHA-256 | 结果 |
+| --- | ---: | --- | --- |
+| 1.16.2 | 86,998,096 | `34102B1C08BB5F769A724427A6F70FE29B3B732C31CF73693F861C48D3492DDB` | 全部静态解析条件通过；未实机运行本 MOD |
+| 1.17 | 87,024,720 | `D1A84083C6C7C7902162FF098F7D86812839AA6B3575959398857E539C488134` | 全部静态解析条件通过；旧固定地址实现已有实机证据 |
+
+对两个真实磁盘 EXE 执行与运行时相同的签名和关系复核，均得到：公共可用性签名 1 个、直接
+调用者 2 个、HDR 灰显谓词 1 个、RTTI/COL 虚表 1 个且有 4 个可执行 `lea` 引用、配置复制
+函数 1 个、后端查询 1 个。动态 Cookie 和全部 RVA 与各版本的 Ghidra 结果一致。具体地址和
+算法边界见 `docs/version-compatibility.zh-CN.md`。
+
+运行时不再把未知完整哈希直接判死，也不会因哈希未知而使用旧地址。已知哈希必须同时通过
+动态解析和预期 RVA 复核；未知哈希必须通过唯一机器码、多重调用关系、RTTI/COL、六项虚表、
+关键字段、Cookie 目标与页边界的整组检查。失败时不安装任何游戏内部 HDR Hook、不请求
+受管 PQ，只保留 DXGI/AGS 诊断并记录 `COMPATIBILITY FAILURE`。因此新版游戏仍可启动并
+提供异常日志，但窗口态 HDR 保持游戏原生不可用状态。
+
+### 本地检查与发布物
+
+Cargo 不由本机 mise 管理，本轮按规则直接使用 PATH 中的 Cargo。以下检查全部通过：
+
+```text
+cargo fmt --all -- --check                                      通过
+cargo clippy --locked --all-targets --target x86_64-pc-windows-msvc -- -D warnings
+                                                                通过，0 warning
+cargo test --locked --target x86_64-pc-windows-msvc             通过，43/43
+cargo build --locked --release --target x86_64-pc-windows-msvc  通过
+PowerShell AST 解析 build.ps1 / collect-logs.ps1 / package.ps1  通过
+```
+
+当前 Release DLL 为 COFF x86-64、64 位、`IMAGE_FILE_DLL`，保留 ASLR、High Entropy VA、
+NX 与 CFG instrumentation；导出 `DllMain`、`elden_ring_windowed_hdr_init` 和旧兼容
+initializer。构建目录与打包目录中的 DLL 哈希一致：
+
+```text
+EldenRingWindowedHDR.dll SHA-256: 34990F3C9FC48C6D08D4D65F5B15047DB8813F25C8641BEFBF1CA969E2C32148
+EldenRingWindowedHDR-1.0.0.zip SHA-256: 9D2C1D6CFE051271D84C413B062EC6FF7677F2C4B8C2BDED92EE0DE344277409
+```
+
+ZIP 校验文件与复算值一致，归档仍恰含 7 个玩家文件：`.me3`、DLL、INI、双语 TXT README、
+许可证和第三方声明；不含 `docs`、`scripts`、日志、测试结果、PDB、游戏二进制或 Ghidra
+数据。Nexus Short description 为 253 字符，仍低于 350 字符限制。
+
+### 当前发布判定
+
+静态实现、双版本解析、单元测试、Release 构建和玩家包审计均通过，没有发现可由本地检查
+确认的阻止问题。但当前 DLL 的动态解析器尚未在真实 `eldenring.exe` 进程中运行；旧 1.17
+实机证据只能证明 HDR 状态机，不能证明新 PE 内存扫描、动态地址传递和二次安装校验已经在
+游戏内执行。因此正式发布前仍需按 `docs/testing.zh-CN.md` 的“1.0.0 跨版本解析器短回归”
+在 1.17 完成两次启动，并保存含完整 `COMPATIBILITY` 闭环的日志。
+
+1.16.2 当前只能标记为“静态结构兼容，待实机验证”；未知哈希即使被自动接受，也只能标记
+为“结构兼容但未验证”。在 1.17 短回归完成前，当前包是可测试的发布候选，不应作为已经
+完成最终实机验收的正式版本发布。

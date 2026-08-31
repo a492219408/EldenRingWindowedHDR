@@ -4,6 +4,7 @@
 
 mod config;
 mod dxgi;
+mod game_compat;
 mod game_hdr;
 mod logger;
 mod sha256;
@@ -23,9 +24,6 @@ use windows::Module;
 
 const DLL_PROCESS_ATTACH: u32 = 1;
 const INITIALIZER_WAIT_TIMEOUT_MS: u32 = 15_000;
-const SUPPORTED_EXE_SIZE: u64 = 87_024_720;
-const SUPPORTED_EXE_SHA256: &str =
-    "D1A84083C6C7C7902162FF098F7D86812839AA6B3575959398857E539C488134";
 
 // 0 = not started, 1 = running, 2 = succeeded, 3 = failed.
 static INIT_STATE: AtomicU8 = AtomicU8::new(0);
@@ -125,24 +123,9 @@ fn initialize() -> Result<(), String> {
     let metadata = std::fs::metadata(&exe_path)
         .map_err(|error| format!("cannot read target executable metadata: {error}"))?;
     logger.line(format!("target executable size: {} bytes", metadata.len()));
-    if metadata.len() != SUPPORTED_EXE_SIZE {
-        let message = format!(
-            "unsupported eldenring.exe size: expected {SUPPORTED_EXE_SIZE}, found {}",
-            metadata.len()
-        );
-        logger.line(&message);
-        return Err(message);
-    }
     let executable_hash = sha256::file_hex(&exe_path)
         .map_err(|error| format!("cannot hash target executable: {error}"))?;
     logger.line(format!("target executable SHA-256: {executable_hash}"));
-    if executable_hash != SUPPORTED_EXE_SHA256 {
-        let message = format!(
-            "unsupported eldenring.exe hash: expected {SUPPORTED_EXE_SHA256}, found {executable_hash}"
-        );
-        logger.line(&message);
-        return Err(message);
-    }
 
     let (config, created) = match Config::load_or_create(&ini_path) {
         Ok(result) => result,
@@ -164,7 +147,6 @@ fn initialize() -> Result<(), String> {
         );
     }
 
-    let installed = unsafe { dxgi::install(&logger) }?;
     let windowed_hdr = config.mode == Mode::WindowedHdr;
     let emulate_hdr_fullscreen_state = matches!(
         config.mode,
@@ -177,19 +159,44 @@ fn initialize() -> Result<(), String> {
         Mode::UnlockHdrMenu | Mode::EmulateHdrFullscreenState | Mode::EmulateHdrAndSetPq
     );
     let behavior_changing_hdr_mode = config.mode != Mode::Observe;
-    let hdr_menu_gate_hooked = match unsafe {
-        game_hdr::install_menu_gate(&logger, force_unlock_hdr_menu, behavior_changing_hdr_mode)
+    let game_targets = match unsafe {
+        game_compat::resolve(&logger, metadata.len(), &executable_hash)
     } {
-        Ok(()) => true,
+        Ok(targets) => Some(targets),
         Err(error) => {
             logger.line(format!(
-                "HDR menu-gate hook was not installed; no menu override is active: {error}"
+                "COMPATIBILITY FAILURE: {error}; refusing all internal HDR hooks and behavior changes"
             ));
-            false
+            logger.line(
+                "SAFETY: DXGI/AGS diagnostic observation may continue, but native game HDR behavior and color-space ownership will remain unchanged",
+            );
+            None
         }
     };
-    let hdr_availability_hooked = if windowed_hdr {
-        match unsafe { game_hdr::install_availability_observer(&logger) } {
+
+    let installed = unsafe { dxgi::install(&logger) }?;
+    let hdr_menu_gate_hooked = if let Some(targets) = game_targets.as_ref() {
+        match unsafe {
+            game_hdr::install_menu_gate(
+                &logger,
+                targets,
+                force_unlock_hdr_menu,
+                behavior_changing_hdr_mode,
+            )
+        } {
+            Ok(()) => true,
+            Err(error) => {
+                logger.line(format!(
+                    "HDR menu-gate hook was not installed; no menu override is active: {error}"
+                ));
+                false
+            }
+        }
+    } else {
+        false
+    };
+    let hdr_availability_hooked = if windowed_hdr && let Some(targets) = game_targets.as_ref() {
+        match unsafe { game_hdr::install_availability_observer(&logger, targets) } {
             Ok(()) => true,
             Err(error) => {
                 logger.line(format!(
@@ -201,23 +208,31 @@ fn initialize() -> Result<(), String> {
     } else {
         false
     };
-    let graphics_config_hooked = match unsafe { game_hdr::install_config_observer(&logger) } {
-        Ok(()) => true,
-        Err(error) => {
-            logger.line(format!(
-                "graphics-config apply observer was not installed; DXGI/AGS observation remains active: {error}"
-            ));
-            false
+    let graphics_config_hooked = if let Some(targets) = game_targets.as_ref() {
+        match unsafe { game_hdr::install_config_observer(&logger, targets) } {
+            Ok(()) => true,
+            Err(error) => {
+                logger.line(format!(
+                    "graphics-config apply observer was not installed; DXGI/AGS observation remains active: {error}"
+                ));
+                false
+            }
         }
+    } else {
+        false
     };
-    let hdr_backend_hooked = match unsafe { game_hdr::install_backend_observer(&logger) } {
-        Ok(()) => true,
-        Err(error) => {
-            logger.line(format!(
-                "HDR backend actual-state observer was not installed; no internal fullscreen-state emulation is possible: {error}"
-            ));
-            false
+    let hdr_backend_hooked = if let Some(targets) = game_targets.as_ref() {
+        match unsafe { game_hdr::install_backend_observer(&logger, targets) } {
+            Ok(()) => true,
+            Err(error) => {
+                logger.line(format!(
+                    "HDR backend actual-state observer was not installed; no internal fullscreen-state emulation is possible: {error}"
+                ));
+                false
+            }
         }
+    } else {
+        false
     };
     let hdr_backend_experiment_enabled = emulate_hdr_fullscreen_state
         && hdr_menu_gate_hooked
@@ -242,7 +257,7 @@ fn initialize() -> Result<(), String> {
     ));
     if force_unlock_hdr_menu && !hdr_menu_gate_hooked {
         logger.line(
-            "SAFETY: unlock_hdr_menu was requested but its exact version-specific hook could not be installed; continuing without changing the menu",
+            "SAFETY: unlock_hdr_menu was requested but its structurally verified hook could not be installed; continuing without changing the menu",
         );
     }
     if emulate_hdr_fullscreen_state && !hdr_backend_experiment_enabled {
@@ -252,7 +267,7 @@ fn initialize() -> Result<(), String> {
     }
     if windowed_hdr && !hdr_availability_hooked {
         logger.line(
-            "SAFETY: windowed_hdr requires the exact common-availability hook; persistence and HDR behavior remain native because that hook failed",
+            "SAFETY: windowed_hdr requires the structurally verified common-availability hook; persistence and HDR behavior remain native because that hook failed",
         );
     }
     if installed.dxgi_factory_imports == 0 {
@@ -263,7 +278,13 @@ fn initialize() -> Result<(), String> {
     if installed.amd_ags_imports == 0 {
         logger.line("AMD AGS display-mode import was not hooked; this is expected only when that import is absent or renamed");
     }
-    logger.line("initialization completed successfully");
+    if game_targets.is_some() {
+        logger.line("initialization completed successfully");
+    } else {
+        logger.line(
+            "initialization completed in safe compatibility fallback; diagnostic DXGI/AGS hooks are active, but all internal HDR behavior remains native",
+        );
+    }
     Ok(())
 }
 

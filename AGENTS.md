@@ -21,22 +21,26 @@
 未知 Hook 冲突和打包证据保护的最终审计补丁，正常 HDR 状态机未改变。1.0.0 以
 `Elden Ring Native Windowed HDR` 为正式名称，将 `windowed_hdr` 设为发布默认值，并精简
 玩家发布包、补充双语 TXT README、Nexus 素材和 GitHub Actions；核心状态机仍未改变。先阅读
-`docs/feasibility-analysis.zh-CN.md`、`README.zh-CN.md` 和 `docs/testing.zh-CN.md`，不得把
-当前单台 NVIDIA 验证误写成跨硬件通用可用。
+`docs/feasibility-analysis.zh-CN.md`、`docs/version-compatibility.zh-CN.md`、
+`README.zh-CN.md` 和 `docs/testing.zh-CN.md`，不得把当前单台 NVIDIA 验证误写成跨硬件
+通用可用。1.0.0 发布前又加入严格的跨版本目标解析：App Ver. 1.16.2 与 1.17 的磁盘 EXE
+均已通过静态双版本审计；1.16.2 尚未实际加载本 MOD，不得写成实机已支持。
 
 ## 固定目标与外部资源
 
-当前分析目标为 App Ver. 1.17，对应的可执行文件指纹如下：
+已知分析目标有两个：
 
-- 文件版本：`2.7.0.0`
-- 文件大小：`87,024,720` 字节
-- SHA-256：`D1A84083C6C7C7902162FF098F7D86812839AA6B3575959398857E539C488134`
+- App Ver. 1.16.2 / 文件版本 `2.6.2.0`：`86,998,096` 字节，SHA-256
+  `34102B1C08BB5F769A724427A6F70FE29B3B732C31CF73693F861C48D3492DDB`；
+- App Ver. 1.17 / 文件版本 `2.7.0.0`：`87,024,720` 字节，SHA-256
+  `D1A84083C6C7C7902162FF098F7D86812839AA6B3575959398857E539C488134`；
 - PE：Windows x86-64，映像基址 `0x140000000`
 
 维护者当前提供的仓库外资源：
 
 - 游戏只读备份：
   `I:\backup\艾尔登法环\有DLC-1.17-1.17\steamapps\common\ELDEN RING\Game\eldenring.exe`
+  以及同一根目录下的 1.16.2 备份；同版本“有 DLC/无 DLC”副本已确认字节相同；
 - Ghidra：`D:\DevTools\Ghidra`
 - 可参考的 Rust Hook 项目：`D:\Projects\RustroverProjects\UnlockTheFps`
 - ModEngine3 源码：`D:\Projects\RustroverProjects\me3`
@@ -121,24 +125,30 @@
   持久化。1.0.0 的发布 INI 与缺省配置均默认 `windowed_hdr`；版本/输出/DXGI 前提不满足时
   仍安全拒绝干预。
 - 旧 `mode = force_pq_if_hdr10` 会记录 `SAFETY` 并降级为 `observe`。
-- 菜单 Hook 在安装前校验完整 EXE 哈希、RTTI Complete Object Locator、五个相邻虚表项与
-  原调用函数字节；后端 Hook 校验 `FUN_141E9F4D0` 的 14 字节入口；公共可用性 Hook 校验
-  `FUN_140953A10` 的 14 字节入口，并用专用 trampoline 重定位其中的 RIP-relative security
-  cookie 读取。行为修改模式遇到未知前置 Hook 或任一 DXGI 前提失败时安全拒绝。实现位于
+- `src/game_compat.rs` 只扫描主模块可执行 PE 节，以多段签名唯一解析公共可用性、配置复制
+  和后端状态函数；要求公共函数恰有两个直接调用者，并以调用关系定位灰显谓词，再从代码
+  RIP-relative `lea` 反向验证唯一 RTTI/COL/六项虚表。安全 Cookie 从已验证指令动态解析，
+  必须落在可读非执行节。
+- 已知 1.16.2/1.17 指纹会继续逐项核对预期 RVA；未知哈希只有在整组签名、调用关系、RTTI、
+  虚表、字段语义和内存边界全部通过时才按“结构兼容但未实机验证”放行。失败时不安装游戏
+  内部 HDR Hook、不接管 PQ，只保留 DXGI/AGS 诊断并把具体原因写入日志。
+- 菜单、后端和公共可用性 Hook 在安装前还会复核解析时捕获的虚表邻项与函数首部；行为
+  修改模式遇到未知前置 Hook 或任一 DXGI 前提失败时安全拒绝。安装逻辑位于
   `src/game_hdr.rs`。
-- DLL 运行时严格校验目标 EXE 的大小和 SHA-256，不匹配时在安装 Hook 前退出。
 - `scripts/collect-logs.ps1` 用于保存每次启动会被覆盖的 DLL 日志及系统/GPU/EXE 指纹。
 - `scripts/package.ps1` 若发现同版本包目录含 `test-results` 会拒绝覆盖，禁止绕过该保护删除
   实机证据。1.0.0 正式 ZIP 不再包含开发用 `docs` 和 `scripts`，只包含运行文件、双语 TXT
   README、许可证和第三方声明；脚本同时生成 `.sha256`。最终审计与证据边界见
   `docs/final-audit.zh-CN.md`。
 
-上述虚拟地址只对当前哈希有效。地址用于解释，不得在发布代码中作为无校验的裸常量。
+文档中的虚拟地址只对其明确标注的哈希有效。地址用于解释和已知版本交叉核对，不得在发布
+代码中作为无结构校验的裸常量。
 
 ## 开始工作前
 
 1. 运行 `git status --short`，保留用户已有修改。
-2. 阅读本文件和 `docs/feasibility-analysis.zh-CN.md`。
+2. 阅读本文件、`docs/feasibility-analysis.zh-CN.md` 和
+   `docs/version-compatibility.zh-CN.md`。
 3. 涉及 DXGI Hook 时，阅读 `UnlockTheFps` 的 `AGENTS.md`、`src/dxgi.rs`、`src/windows.rs`
    和 `src/lib.rs`；复用其已验证思路时保留 Overlay 链式 Hook 与内存边界检查。
 4. 涉及加载时序时，阅读 ModEngine3 的 `schemas/mod-profile.zh.md` 和

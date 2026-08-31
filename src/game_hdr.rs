@@ -8,63 +8,23 @@ use std::{
     },
 };
 
-use crate::{dxgi, logger::Logger, windows};
+use crate::{
+    dxgi,
+    game_compat::{GameTargets, HDR_MENU_GATE_INVOKE_INDEX},
+    logger::Logger,
+    windows,
+};
 
 type GraphicsConfigApply = unsafe extern "system" fn(*mut u8, *const u8);
 type HdrMenuGateInvoke = unsafe extern "system" fn(*mut c_void) -> u8;
 type HdrCommonAvailability = unsafe extern "system" fn() -> u8;
 type HdrBackendActualQuery = unsafe extern "system" fn(*mut u8, usize) -> u8;
 
-// App Ver. 1.17 / SHA-256 D1A840...8134 only. This is the vtable for the
-// std::function predicate passed specifically to the Sound and Display HDR
-// row. Slot 2 calls FUN_140953A10 and returns its logical inverse: nonzero
-// means that the row must be grayed out.
-const HDR_MENU_GATE_VTABLE_RVA: usize = 0x02B1_52C8;
-const HDR_MENU_GATE_COMPLETE_OBJECT_LOCATOR_RVA: usize = 0x0332_0AB8;
-const HDR_MENU_GATE_INVOKE_INDEX: usize = 2;
-const HDR_MENU_GATE_INVOKE_RVA: usize = 0x0096_2B30;
-const HDR_MENU_GATE_INVOKE_BYTES: [u8; 19] = [
-    0x48, 0x83, 0xEC, 0x28, // sub rsp, 0x28
-    0xE8, 0xD7, 0x0E, 0xFF, 0xFF, // call FUN_140953A10
-    0x84, 0xC0, // test al, al
-    0x0F, 0x94, 0xC0, // sete al
-    0x48, 0x83, 0xC4, 0x28, // add rsp, 0x28
-    0xC3, // ret
-];
-const HDR_MENU_GATE_NEIGHBORS: &[(usize, usize)] = &[
-    (0, 0x0095_F2C0),
-    (1, 0x0096_4A30),
-    (3, 0x0096_6620),
-    (4, 0x0096_1750),
-    (5, 0x0096_36B0),
-];
 const MAX_INITIAL_GATE_LOGS: usize = 8;
 
-// FUN_140953A10 is the common HDR availability query used by exactly two
-// direct callers in the saved Ghidra project: the true HDR row's gray-out
-// predicate and FUN_14093D730's settings-page initialization/synchronization
-// path. The latter overwrites a loaded HDR request with the current actual
-// state when this function reports unavailable.
-const HDR_COMMON_AVAILABILITY_RVA: usize = 0x0095_3A10;
-const HDR_COMMON_AVAILABILITY_PROLOGUE: [u8; 14] = [
-    0x48, 0x83, 0xEC, 0x48, // sub rsp, 0x48
-    0x48, 0x8B, 0x05, 0xF5, 0xB3, 0x30, 0x03, // mov rax, [security cookie]
-    0x48, 0x33, 0xC4, // xor rax, rsp
-];
-const SECURITY_COOKIE_RVA: usize = 0x03C5_EE10;
 const HDR_COMMON_AVAILABILITY_TRAMPOLINE_LENGTH: usize = 34;
 const MAX_INITIAL_AVAILABILITY_LOGS: usize = 12;
 
-// App Ver. 1.17 / SHA-256 D1A840...8134 only. initialize() verifies the complete
-// on-disk executable before this module is allowed to inspect this RVA.
-const GRAPHICS_CONFIG_APPLY_RVA: usize = 0x0025_C780;
-const GRAPHICS_CONFIG_APPLY_PROLOGUE: [u8; 14] = [
-    0x40, 0x53, // push rbx
-    0x48, 0x83, 0xEC, 0x20, // sub rsp, 0x20
-    0x0F, 0xB6, 0x02, // movzx eax, byte ptr [rdx]
-    0x48, 0x8B, 0xDA, // mov rbx, rdx
-    0x88, 0x01, // mov byte ptr [rcx], al
-];
 const ABSOLUTE_JUMP_LENGTH: usize = 14;
 const DESTINATION_SNAPSHOT_LENGTH: usize = 0x30;
 const SOURCE_SNAPSHOT_LENGTH: usize = 0x62;
@@ -72,18 +32,6 @@ const MAX_UNCHANGED_APPLY_LOGS: usize = 8;
 const HDR_SOURCE_OFFSET: usize = 0x15;
 const HDR_DESTINATION_OFFSET: usize = 0x1B;
 
-// FUN_141E9F4D0 derives the renderer's actual HDR state from the underlying
-// IDXGISwapChain. Its vtable call at +0x58 is IDXGISwapChain::GetFullscreenState;
-// native success therefore requires exclusive fullscreen even when the rest of
-// the swap-chain/output prerequisites are already suitable for windowed HDR.
-const HDR_BACKEND_ACTUAL_QUERY_RVA: usize = 0x01E9_F4D0;
-const HDR_BACKEND_ACTUAL_QUERY_PROLOGUE: [u8; ABSOLUTE_JUMP_LENGTH] = [
-    0x40, 0x53, // push rbx
-    0x57, // push rdi
-    0x48, 0x83, 0xEC, 0x28, // sub rsp, 0x28
-    0xF6, 0x41, 0x32, 0x04, // test byte ptr [rcx+0x32], 4
-    0x48, 0x8B, 0xFA, // mov rdi, rdx
-];
 const HDR_BACKEND_DISABLED_OFFSET: usize = 0x30;
 const HDR_BACKEND_CAPABILITY_FLAGS_OFFSET: usize = 0x32;
 const HDR_BACKEND_HDR_CAPABILITY_FLAG: u8 = 0x04;
@@ -168,11 +116,12 @@ struct HdrCandidateCache {
 ///
 /// # Safety
 ///
-/// The caller must have verified the exact supported executable hash. Every
-/// RTTI/vtable/code pointer used below is version-specific and is checked before
-/// the shared read-only vtable slot is modified.
+/// `targets` must come from the all-or-nothing executable-section resolver.
+/// Every RTTI/vtable/code pointer is checked again immediately before the
+/// shared read-only vtable slot is modified.
 pub unsafe fn install_menu_gate(
     logger: &Logger,
+    targets: &GameTargets,
     unlock: bool,
     require_verified_original: bool,
 ) -> Result<(), String> {
@@ -180,16 +129,20 @@ pub unsafe fn install_menu_gate(
     HDR_MENU_GATE_UNLOCK.store(unlock, Ordering::Release);
 
     let image_base = unsafe { windows::main_module()? }.cast::<u8>();
-    let vtable = unsafe { image_base.add(HDR_MENU_GATE_VTABLE_RVA) }.cast::<*mut c_void>();
-    let expected_locator = unsafe { image_base.add(HDR_MENU_GATE_COMPLETE_OBJECT_LOCATOR_RVA) };
+    let vtable = unsafe { image_base.add(targets.menu_gate_vtable_rva) }.cast::<*mut c_void>();
+    let expected_locator = unsafe { image_base.add(targets.menu_gate_complete_object_locator_rva) };
     let actual_locator = unsafe { *vtable.sub(1) }.cast::<u8>();
     if actual_locator != expected_locator {
         return Err(format!(
-            "HDR menu-gate RTTI mismatch at vtable RVA 0x{HDR_MENU_GATE_VTABLE_RVA:08X}: expected {expected_locator:p}, found {actual_locator:p}"
+            "HDR menu-gate RTTI mismatch at vtable RVA 0x{:08X}: expected {expected_locator:p}, found {actual_locator:p}",
+            targets.menu_gate_vtable_rva
         ));
     }
 
-    for &(index, expected_rva) in HDR_MENU_GATE_NEIGHBORS {
+    for (index, &expected_rva) in targets.menu_gate_entries.iter().enumerate() {
+        if index == HDR_MENU_GATE_INVOKE_INDEX {
+            continue;
+        }
         let expected = unsafe { image_base.add(expected_rva) }.cast::<c_void>();
         let actual = unsafe { *vtable.add(index) };
         if actual != expected {
@@ -199,21 +152,24 @@ pub unsafe fn install_menu_gate(
         }
     }
 
-    let expected_original = unsafe { image_base.add(HDR_MENU_GATE_INVOKE_RVA) }.cast::<c_void>();
+    let expected_original =
+        unsafe { image_base.add(targets.menu_gate_invoke_rva) }.cast::<c_void>();
     let expected_body = unsafe {
         std::slice::from_raw_parts(
             expected_original.cast::<u8>(),
-            HDR_MENU_GATE_INVOKE_BYTES.len(),
+            targets.menu_gate_invoke_bytes.len(),
         )
     };
-    if expected_body != HDR_MENU_GATE_INVOKE_BYTES {
+    if expected_body != targets.menu_gate_invoke_bytes {
         if require_verified_original {
             return Err(format!(
-                "HDR menu-gate invoke body at RVA 0x{HDR_MENU_GATE_INVOKE_RVA:08X} is already modified; refusing the behavior-changing override"
+                "HDR menu-gate invoke body at RVA 0x{:08X} changed after compatibility resolution; refusing the behavior-changing override",
+                targets.menu_gate_invoke_rva
             ));
         }
         logger.line(format!(
-            "HDR menu-gate invoke body at RVA 0x{HDR_MENU_GATE_INVOKE_RVA:08X} is already modified; observe mode will chain it without changing its result"
+            "HDR menu-gate invoke body at RVA 0x{:08X} changed after compatibility resolution; observe mode will chain it without changing its result",
+            targets.menu_gate_invoke_rva
         ));
     }
 
@@ -274,7 +230,8 @@ pub unsafe fn install_menu_gate(
     }
 
     logger.line(format!(
-        "HDR menu-gate hook installed at vtable RVA 0x{HDR_MENU_GATE_VTABLE_RVA:08X}, slot {HDR_MENU_GATE_INVOKE_INDEX}; original={current:p}; mode={}",
+        "HDR menu-gate hook installed at vtable RVA 0x{:08X}, slot {HDR_MENU_GATE_INVOKE_INDEX}; original={current:p}; mode={}",
+        targets.menu_gate_vtable_rva,
         if unlock { "unlock_hdr_menu" } else { "observe" }
     ));
     Ok(())
@@ -327,17 +284,21 @@ unsafe extern "system" fn hdr_menu_gate_hook(this: *mut c_void) -> u8 {
 ///
 /// # Safety
 ///
-/// The exact executable hash must already be verified. The function has a
-/// RIP-relative security-cookie load in its first 14 bytes, so installation
-/// uses a dedicated relocated trampoline instead of the generic copier.
-pub unsafe fn install_availability_observer(logger: &Logger) -> Result<(), String> {
+/// `targets` must come from the strict resolver. The function has a RIP-relative
+/// security-cookie load in its first 14 bytes, so installation uses a dedicated
+/// relocated trampoline instead of the generic copier.
+pub unsafe fn install_availability_observer(
+    logger: &Logger,
+    targets: &GameTargets,
+) -> Result<(), String> {
     let _ = LOGGER.set(logger.clone());
     HDR_WINDOWED_AVAILABILITY_ENABLED.store(false, Ordering::Release);
 
     let image_base = unsafe { windows::main_module()? }.cast::<u8>();
-    let trampoline = unsafe { install_verified_availability_hook(image_base) }?;
+    let trampoline = unsafe { install_verified_availability_hook(image_base, targets) }?;
     logger.line(format!(
-        "HDR common-availability observer installed at RVA 0x{HDR_COMMON_AVAILABILITY_RVA:08X}; trampoline={trampoline:p}; passthrough=true"
+        "HDR common-availability observer installed at RVA 0x{:08X}; trampoline={trampoline:p}; passthrough=true",
+        targets.common_availability_rva
     ));
     Ok(())
 }
@@ -421,19 +382,22 @@ unsafe extern "system" fn hdr_common_availability_hook() -> u8 {
 ///
 /// # Safety
 ///
-/// The caller must have verified the exact supported executable hash. The
-/// version-specific prologue is checked byte-for-byte before it is replaced.
+/// `targets` must come from the strict resolver. Its captured prologue is
+/// checked byte-for-byte before it is replaced.
 /// Installation occurs during the early ModEngine3 initializer, before the
 /// target routine is expected to execute.
-pub unsafe fn install_config_observer(logger: &Logger) -> Result<(), String> {
+pub unsafe fn install_config_observer(
+    logger: &Logger,
+    targets: &GameTargets,
+) -> Result<(), String> {
     let _ = LOGGER.set(logger.clone());
 
     let image_base = unsafe { windows::main_module()? }.cast::<u8>();
     let trampoline = unsafe {
         install_verified_inline_hook(
             image_base,
-            GRAPHICS_CONFIG_APPLY_RVA,
-            &GRAPHICS_CONFIG_APPLY_PROLOGUE,
+            targets.graphics_config_apply_rva,
+            &targets.graphics_config_apply_prologue,
             graphics_config_apply_hook as *const () as usize,
             &GRAPHICS_CONFIG_APPLY_ORIGINAL,
             "graphics-config apply",
@@ -441,7 +405,8 @@ pub unsafe fn install_config_observer(logger: &Logger) -> Result<(), String> {
     }?;
 
     logger.line(format!(
-        "graphics-config apply observer installed at RVA 0x{GRAPHICS_CONFIG_APPLY_RVA:08X}; trampoline={trampoline:p}; verified HDR mapping=source+0x{HDR_SOURCE_OFFSET:02X} -> destination+0x{HDR_DESTINATION_OFFSET:02X}"
+        "graphics-config apply observer installed at RVA 0x{:08X}; trampoline={trampoline:p}; verified HDR mapping=source+0x{HDR_SOURCE_OFFSET:02X} -> destination+0x{HDR_DESTINATION_OFFSET:02X}",
+        targets.graphics_config_apply_rva
     ));
     Ok(())
 }
@@ -451,10 +416,13 @@ pub unsafe fn install_config_observer(logger: &Logger) -> Result<(), String> {
 ///
 /// # Safety
 ///
-/// The exact executable hash must already be verified. The hook remains a
-/// pass-through until `enable_backend_experiment` is explicitly called after
-/// all prerequisite hooks have installed successfully.
-pub unsafe fn install_backend_observer(logger: &Logger) -> Result<(), String> {
+/// `targets` must come from the strict resolver. The hook remains a pass-through
+/// until `enable_backend_experiment` is explicitly called after all prerequisite
+/// hooks have installed successfully.
+pub unsafe fn install_backend_observer(
+    logger: &Logger,
+    targets: &GameTargets,
+) -> Result<(), String> {
     let _ = LOGGER.set(logger.clone());
     HDR_BACKEND_EXPERIMENT_ENABLED.store(false, Ordering::Release);
     HDR_BACKEND_COLOR_SPACE_SYNC_ENABLED.store(false, Ordering::Release);
@@ -463,15 +431,16 @@ pub unsafe fn install_backend_observer(logger: &Logger) -> Result<(), String> {
     let trampoline = unsafe {
         install_verified_inline_hook(
             image_base,
-            HDR_BACKEND_ACTUAL_QUERY_RVA,
-            &HDR_BACKEND_ACTUAL_QUERY_PROLOGUE,
+            targets.backend_actual_query_rva,
+            &targets.backend_actual_query_prologue,
             hdr_backend_actual_query_hook as *const () as usize,
             &HDR_BACKEND_ACTUAL_QUERY_ORIGINAL,
             "HDR backend actual-state query",
         )
     }?;
     logger.line(format!(
-        "HDR backend actual-state observer installed at RVA 0x{HDR_BACKEND_ACTUAL_QUERY_RVA:08X}; trampoline={trampoline:p}; passthrough=true"
+        "HDR backend actual-state observer installed at RVA 0x{:08X}; trampoline={trampoline:p}; passthrough=true",
+        targets.backend_actual_query_rva
     ));
     Ok(())
 }
@@ -719,11 +688,17 @@ fn live_hdr_text(value: u8) -> &'static str {
     }
 }
 
-unsafe fn install_verified_availability_hook(image_base: *mut u8) -> Result<*mut u8, String> {
-    let target = unsafe { image_base.add(HDR_COMMON_AVAILABILITY_RVA) };
+unsafe fn install_verified_availability_hook(
+    image_base: *mut u8,
+    targets: &GameTargets,
+) -> Result<*mut u8, String> {
+    let target = unsafe { image_base.add(targets.common_availability_rva) };
     let patch = absolute_jump(hdr_common_availability_hook as *const () as usize);
     let actual_prologue = unsafe {
-        std::slice::from_raw_parts(target.cast_const(), HDR_COMMON_AVAILABILITY_PROLOGUE.len())
+        std::slice::from_raw_parts(
+            target.cast_const(),
+            targets.common_availability_prologue.len(),
+        )
     };
     if actual_prologue == patch {
         let original = HDR_COMMON_AVAILABILITY_ORIGINAL.load(Ordering::Acquire);
@@ -734,27 +709,32 @@ unsafe fn install_verified_availability_hook(image_base: *mut u8) -> Result<*mut
         }
         return Ok(original.cast());
     }
-    if actual_prologue != HDR_COMMON_AVAILABILITY_PROLOGUE {
+    if actual_prologue != targets.common_availability_prologue {
         return Err(format!(
-            "HDR common-availability prologue mismatch at RVA 0x{HDR_COMMON_AVAILABILITY_RVA:08X}; refusing to overwrite another patch or unsupported build"
+            "HDR common-availability prologue mismatch at RVA 0x{:08X}; refusing to overwrite a post-resolution patch",
+            targets.common_availability_rva
         ));
     }
 
     let displacement = i32::from_le_bytes(
-        HDR_COMMON_AVAILABILITY_PROLOGUE[7..11]
+        targets.common_availability_prologue[7..11]
             .try_into()
             .expect("fixed displacement range"),
     );
-    let resolved_cookie =
-        (unsafe { target.add(11) } as usize).wrapping_add_signed(displacement as isize);
-    let expected_cookie = unsafe { image_base.add(SECURITY_COOKIE_RVA) } as usize;
+    let resolved_cookie = (unsafe { target.add(11) } as usize)
+        .checked_add_signed(displacement as isize)
+        .ok_or_else(|| {
+            "HDR common-availability security-cookie relocation overflowed after resolution"
+                .to_owned()
+        })?;
+    let expected_cookie = unsafe { image_base.add(targets.security_cookie_rva) } as usize;
     if resolved_cookie != expected_cookie {
         return Err(format!(
             "HDR common-availability security-cookie relocation mismatch: expected {expected_cookie:#018X}, resolved {resolved_cookie:#018X}"
         ));
     }
 
-    let return_address = unsafe { target.add(HDR_COMMON_AVAILABILITY_PROLOGUE.len()) } as usize;
+    let return_address = unsafe { target.add(targets.common_availability_prologue.len()) } as usize;
     let trampoline_bytes = build_availability_trampoline(expected_cookie, return_address);
     let trampoline = unsafe { windows::allocate_read_write(trampoline_bytes.len()) }?;
     unsafe {
@@ -789,7 +769,7 @@ unsafe fn install_verified_availability_hook(image_base: *mut u8) -> Result<*mut
     let installed_bytes = unsafe { std::slice::from_raw_parts(target, patch.len()) };
     if installed_bytes != patch {
         let restore_result =
-            unsafe { windows::write_memory(target, &HDR_COMMON_AVAILABILITY_PROLOGUE) };
+            unsafe { windows::write_memory(target, &targets.common_availability_prologue) };
         let _ = HDR_COMMON_AVAILABILITY_ORIGINAL.compare_exchange(
             trampoline.cast(),
             ptr::null_mut(),
@@ -969,24 +949,6 @@ mod tests {
     }
 
     #[test]
-    fn verified_prologue_exactly_fills_the_inline_patch() {
-        assert_eq!(GRAPHICS_CONFIG_APPLY_PROLOGUE.len(), ABSOLUTE_JUMP_LENGTH);
-        assert_eq!(GRAPHICS_CONFIG_APPLY_PROLOGUE[0..2], [0x40, 0x53]);
-        assert_eq!(GRAPHICS_CONFIG_APPLY_PROLOGUE[12..14], [0x88, 0x01]);
-        assert_eq!(
-            HDR_BACKEND_ACTUAL_QUERY_PROLOGUE.len(),
-            ABSOLUTE_JUMP_LENGTH
-        );
-        assert_eq!(HDR_BACKEND_ACTUAL_QUERY_PROLOGUE[0..3], [0x40, 0x53, 0x57]);
-        assert_eq!(
-            HDR_BACKEND_ACTUAL_QUERY_PROLOGUE[11..14],
-            [0x48, 0x8B, 0xFA]
-        );
-        assert_eq!(HDR_COMMON_AVAILABILITY_PROLOGUE.len(), ABSOLUTE_JUMP_LENGTH);
-        assert_eq!(HDR_COMMON_AVAILABILITY_PROLOGUE[4..7], [0x48, 0x8B, 0x05]);
-    }
-
-    #[test]
     fn availability_trampoline_rewrites_the_rip_relative_cookie_load() {
         let trampoline =
             build_availability_trampoline(0x1122_3344_5566_7788, 0x8877_6655_4433_2211);
@@ -1031,27 +993,6 @@ mod tests {
         assert!(message.contains("destination+0x1B=0->1"));
         assert!(message.contains("dst+0x1B 0->1 (src+0x15=1)"));
         assert!(message.contains("dst+0x20 0->2 (src+0x04=2)"));
-    }
-
-    #[test]
-    fn hdr_menu_gate_invoke_signature_matches_the_expected_control_flow() {
-        assert_eq!(HDR_MENU_GATE_INVOKE_BYTES.len(), 19);
-        assert_eq!(&HDR_MENU_GATE_INVOKE_BYTES[..4], &[0x48, 0x83, 0xEC, 0x28]);
-        assert_eq!(
-            &HDR_MENU_GATE_INVOKE_BYTES[9..14],
-            &[0x84, 0xC0, 0x0F, 0x94, 0xC0]
-        );
-        assert_eq!(HDR_MENU_GATE_INVOKE_BYTES[18], 0xC3);
-    }
-
-    #[test]
-    fn hdr_menu_gate_vtable_validation_does_not_include_the_hooked_slot() {
-        assert!(
-            HDR_MENU_GATE_NEIGHBORS
-                .iter()
-                .all(|&(index, _)| index != HDR_MENU_GATE_INVOKE_INDEX)
-        );
-        assert_eq!(HDR_MENU_GATE_NEIGHBORS.len(), 5);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 # Elden Ring Native Windowed HDR
 
-这是一个由 ModEngine3 提前加载的 Rust DLL，用于在《艾尔登法环》App Ver. 1.17 的
-窗口态 HDR。0.1.0 至 0.4.0 逐层确认了 10 位交换链、真正 HDR 菜单、内部请求和依赖独占
+这是一个由 ModEngine3 提前加载的 Rust DLL，用于实现《艾尔登法环》的窗口态 HDR。现有
+真实游戏证据来自 App Ver. 1.17；0.1.0 至 0.4.0 逐层确认了 10 位交换链、真正 HDR 菜单、内部请求和依赖独占
 全屏的“实际 HDR 状态”门控。0.5.0 又把 PQ 色彩空间提交同步到对应 HDR 帧的 `Present`
 之前；`20260830-215204-v050-borderless-hdr-pq-sync` 的首台 NVIDIA 实机测试中，开启后得到
 正常 HDR，关闭后恢复正常 SDR，日志中的 PQ 与恢复调用也都成功。
@@ -40,14 +40,21 @@
   覆盖公共 HDR 可用性判断，避免设置页初始化把游戏已载入的 HDR 请求归一化为关闭；
 - 启动恢复时以游戏后端自己的已确认请求位为准，不创建第二份 HDR 状态，也不打开、解析或
   修改游戏存档；
-- 只接受已分析的 `eldenring.exe` 指纹，版本不符时在安装 Hook 前安全终止初始化。
+- 对已知 `eldenring.exe` 指纹复核动态解析结果；对未知哈希只在整组机器码、调用关系、
+  RTTI/虚表和内存边界全部通过时尝试兼容，失败时保留诊断日志且不改变 HDR 行为。
 
-目标 EXE 的固定指纹为：
+已完成静态审计的 EXE 指纹为：
 
-```text
-大小：87,024,720 字节
-SHA-256：D1A84083C6C7C7902162FF098F7D86812839AA6B3575959398857E539C488134
-```
+| App Ver. | 文件版本 | 大小 | SHA-256 | 状态 |
+| --- | --- | ---: | --- | --- |
+| 1.16.2 | 2.6.2.0 | 86,998,096 | `34102B1C08BB5F769A724427A6F70FE29B3B732C31CF73693F861C48D3492DDB` | 静态解析通过，尚未实机运行本 MOD |
+| 1.17 | 2.7.0.0 | 87,024,720 | `D1A84083C6C7C7902162FF098F7D86812839AA6B3575959398857E539C488134` | 静态解析及当前 NVIDIA 实机通过 |
+
+运行时不再把完整哈希当作唯一放行条件。解析器只扫描主模块可执行 PE 节，要求公共 HDR
+可用性、菜单谓词、配置复制和后端状态目标唯一，并交叉核对两个直接调用者、MSVC RTTI/COL、
+六项虚表、安全 Cookie 和关键字段复制。未知新版若相关结构完全未变，可以按“结构兼容但
+尚未实机验证”继续；任何歧义都会进入安全回退，不安装内部 HDR Hook，也不接管 PQ。详见
+`docs/version-compatibility.zh-CN.md`。
 
 ## 运行模式
 
@@ -67,7 +74,7 @@ flip-model、PQ 输出和 `PRESENT` 支持才返回可用。该函数的两个�
 
 `observe` 不修改游戏传给 DXGI、AGS 或 HDR 菜单的任何参数，仅用于门控和状态转换诊断。
 
-`unlock_hdr_menu` 先调用 App Ver. 1.17 真正 HDR 行的原灰显谓词，
+`unlock_hdr_menu` 先调用运行时已解析并验证的真正 HDR 行原灰显谓词，
 记录 `original_grayed`，再把返回 UI 的 `effective_grayed` 改为 `false`。它不会：
 
 - 直接修改 HDR 配置字段；
@@ -102,8 +109,8 @@ flip-model、PQ 输出和 `PRESENT` 支持才返回可用。该函数的两个�
 计划内。
 
 `unlock_hdr_menu`、`emulate_hdr_fullscreen_state` 和 `emulate_hdr_and_set_pq` 只保留为
-`docs/testing.zh-CN.md` 所需的诊断模式。无论选择何种模式，只要检测到版本、RTTI、相邻
-虚表项、调用函数字节或 DXGI 前提不符，DLL 都会拒绝对应干预并记录原因。
+`docs/testing.zh-CN.md` 所需的诊断模式。无论选择何种模式，只要检测到签名唯一性、调用
+关系、RTTI、相邻虚表项、调用函数字节或 DXGI 前提不符，DLL 都会拒绝对应干预并记录原因。
 
 `force_pq_if_hdr10` 已退役。若旧 INI 仍请求它，DLL 会写入 `SAFETY` 日志并自动退回
 `observe`，绝不会再次把 SDR 画面强行标记为 PQ。

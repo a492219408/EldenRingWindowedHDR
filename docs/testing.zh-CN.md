@@ -70,7 +70,7 @@ mode = windowed_hdr
 此时只有游戏后端自己的已确认“请求 HDR”位为真，才允许进入内部 HDR。用户操作菜单后，
 仍要求菜单配置与后端请求一致。
 
-## 1.0.0 发布候选快速复核
+## 1.0.0 原发布候选快速复核（已完成）
 
 1.0.0 只改变公开名称、文件名、initializer 名称、缺省配置和打包方式，HDR 状态机未改；但
 正式发布前仍应对**最终 ZIP 中的实际 DLL/INI/.me3 组合**做一次短回归。测试时不要同时加载
@@ -109,7 +109,70 @@ managed SetColorSpace1 before Present ... transition=restore_previous ... succes
 4. 正常退出，收集为 `v100-rc-windows-hdr-off`；
 5. 测试完成后按需恢复 Windows HDR。
 
-该快速复核完成前，只能把 1.0.0 称为“本地构建通过、等待最终实机确认”的发布候选。
+维护者已完成上述三次快速复核并报告全部符合预期。该结论对应加入跨版本动态解析之前的
+1.0.0 DLL；HDR 状态机没有改变，但内部 Hook 地址的取得和验证方式已经改变，因此仍需执行
+下一节的兼容层短回归。
+
+## 1.0.0 跨版本解析器短回归（当前待测）
+
+本轮只需要在已经实机验证过的 App Ver. 1.17 上确认“动态解析得到的目标”和原固定地址路径
+行为一致。不要修改游戏 EXE，也不要为了制造失败路径使用十六进制补丁。App Ver. 1.16.2
+目前只有静态兼容证据；若没有一套可安全启动的旧版本游戏环境，不要求强行运行它。
+
+### 第 1 次：1.17 已知指纹、无边框开关
+
+1. 使用当前最终发布包和缺省 `mode = windowed_hdr`；不要同时加载旧版 DLL；
+2. Windows HDR 开启，以“无边框窗口化 + HDR 关闭”启动；
+3. 打开 HDR 设置页，开启 HDR，确认画面正常；
+4. 再关闭 HDR，确认立即恢复正常 SDR；
+5. 再次开启 HDR 并正常退出，以便第 2 次验证启动恢复；
+6. 收集为 `v100-compat-117-borderless-resolve`。
+
+除既有 Hook/PQ 日志外，本次必须包含以下兼容层闭环：
+
+```text
+COMPATIBILITY: recognized App Ver. 1.17 / file version 2.7.0.0
+COMPATIBILITY: common HDR availability signature matches=1 (0x00953A10)
+COMPATIBILITY: common HDR availability direct callers=2
+COMPATIBILITY: HDR menu-gate caller candidates=1 (0x00962B30)
+COMPATIBILITY: HDR menu-gate vtable RVA=0x02B152C8 ... executable LEA references=4
+COMPATIBILITY: graphics-config apply signature matches=1 (0x0025C780)
+COMPATIBILITY: HDR backend actual-state signature matches=1 (0x01E9F4D0)
+COMPATIBILITY: all resolved RVAs and semantic checks match the known App Ver. 1.17 ... profile
+COMPATIBILITY: target bundle resolved ...
+```
+
+同时应有 `hdr_backend_experiment=true`、开启 PQ 成功与恢复 SDR 成功；不得出现
+`COMPATIBILITY FAILURE`、`safe compatibility fallback` 或新的 `SAFETY`。
+
+### 第 2 次：启动持久化与普通窗口化
+
+1. 再次启动，不打开设置页、不加载角色，等待标题界面稳定；
+2. 确认 HDR 自动恢复且画面正常；
+3. 切换到普通“窗口化”，确认 HDR 仍正常；
+4. 打开 HDR 设置页关闭 HDR，确认恢复正常 SDR 并退出；
+5. 收集为 `v100-compat-117-persist-windowed`。
+
+收集日志时务必传入 EXE 路径，例如：
+
+```powershell
+.\scripts\collect-logs.ps1 `
+  -LogPath 'D:\你的Mod目录\natives\EldenRingWindowedHDR.log' `
+  -Label 'v100-compat-117-borderless-resolve' `
+  -GameExePath 'I:\backup\艾尔登法环\有DLC-1.17-1.17\steamapps\common\ELDEN RING\Game\eldenring.exe'
+```
+
+如果实际 ModEngine3 启动的是另一个安装目录，应把 `-GameExePath` 改成**实际启动的**
+`eldenring.exe`，不要为了方便填备份路径。即使漏传该参数，DLL 日志自身仍含文件大小、
+SHA-256 和解析结果，但最终发布证据应尽量同时保存收集脚本记录。
+
+### 可选：1.16.2 首次实机验证
+
+只有在能安全离线启动完整 App Ver. 1.16.2 环境时再做。先用 `mode = observe` 启动一次，要求
+日志识别 1.16.2，解析结果分别为 `0x00952870`、`0x00961A00`、`0x02B12248`、
+`0x0025C7B0` 与 `0x01E9D6D0`，且没有失败或冲突。随后再使用 `windowed_hdr` 重复一次
+无边框 HDR 开→关。仅有静态解析日志而没有正常 HDR/SDR 视觉结果时，仍不能把 1.16.2
+标记为实机已验证。
 
 ## 0.6.x 历史矩阵测试前准备
 
@@ -232,8 +295,8 @@ PQ 输出及 `PRESENT` 支持。窗口尺寸与无边框不同是正常现象；
 不要提交到公开仓库。
 
 `-GameExePath` 可以省略，但建议始终提供。省略时只会让 `system.txt` 缺少脚本追加的 EXE
-元数据；DLL 日志仍会在安装 Hook 前记录并强校验实际运行 EXE 的大小和 SHA-256。当前
-收集脚本会在 `system.txt` 中明确标记这一情况。
+元数据；DLL 日志仍会记录实际运行 EXE 的大小、SHA-256 和完整结构解析结果。当前收集脚本
+会在 `system.txt` 中明确标记这一情况。
 
 ## 通过与停止条件
 

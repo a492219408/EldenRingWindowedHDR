@@ -2,7 +2,7 @@
 name = "elden-ring-windowed-hdr"
 version = "1.0.0"
 edition = "2024"
-authors = ["Luan (a492219408)"]
+authors = ["Luna (a492219408)"]
 license = "MIT"
 description = "Enable Elden Ring's native HDR rendering in borderless and windowed modes through ModEngine3"
 publish = false
