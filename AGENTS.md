@@ -147,6 +147,9 @@
   实机证据。1.0.0 正式 ZIP 不再包含开发用 `docs` 和 `scripts`，只包含运行文件、双语 TXT
   README、许可证和第三方声明；脚本同时生成 `.sha256`。最终审计与证据边界见
   `docs/final-audit.zh-CN.md`。
+- GitHub Actions 的 CI 与 Release 工作流固定使用 Rust 1.98.0，避免浮动 `stable` 新增 Clippy
+  lint 后让未改动的发布无预警失败。`src/sha256.rs` 已兼容 1.98 的
+  `chunks_exact_to_as_chunks` lint；该机械改写不改变摘要算法或 HDR/DXGI 状态机。
 
 文档中的虚拟地址只对其明确标注的哈希有效。地址用于解释和已知版本交叉核对，不得在发布
 代码中作为无结构校验的裸常量。

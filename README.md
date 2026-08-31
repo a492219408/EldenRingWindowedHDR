@@ -34,6 +34,8 @@ If Cargo is not managed by mise, use the same Cargo commands without `mise exec 
 .\scripts\package.ps1
 ```
 
+GitHub Actions pins Rust 1.98.0 so CI and release lint results remain reproducible instead of changing whenever the floating `stable` channel advances.
+
 ## License
 
 MIT License. See [`LICENSE`](LICENSE) and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

@@ -308,3 +308,34 @@ Short description 实际为 253 字符，低于 350 字符限制。本轮最终�
 EldenRingWindowedHDR.dll SHA-256: 34990F3C9FC48C6D08D4D65F5B15047DB8813F25C8641BEFBF1CA969E2C32148
 EldenRingWindowedHDR-1.0.0.zip SHA-256: 9FD5665A37686A616805EDE6BED485ED21F9D96519F1E72DA3CF643D691A3091
 ```
+
+## GitHub Actions Rust 1.98 兼容修正
+
+修正日期：2026-08-31
+
+提交 `9c31faf` 推送后的 CI 日志显示，GitHub runner 自动取得了 Rust/Clippy 1.98.0。Clippy
+1.98 新增 `chunks_exact_to_as_chunks`，而 `scripts/build.ps1` 使用 `-D warnings`，导致
+`src/sha256.rs` 中两个在 1.96 下通过的 `chunks_exact(_mut)` 循环被提升为错误。失败发生在
+Clippy 阶段，尚未进入测试、Release 构建或打包；不是 GitHub 权限、ModEngine3 配置或
+HDR 实现失败。
+
+修正包含两部分：
+
+- 以固定索引重写 SHA-256 的 8 个输出字和 16 个输入字装载，消除新 lint；字节序、轮函数、
+  文件读取和摘要输出未改变；
+- CI 与 Release 工作流从浮动 `dtolnay/rust-toolchain@stable` 改为明确的
+  `dtolnay/rust-toolchain@1.98.0`，使同一提交的 lint 规则可复现。
+
+本轮在本机 Rust 1.96.0 重新通过格式检查、Clippy `-D warnings`、43/43 单元测试和 x64
+Release 构建；已安装的 Clippy 1.98 nightly 也通过相同 Clippy 命令与 43/43 单元测试，其中
+SHA-256 已覆盖标准已知向量和跨分块一致性。没有修改 `dxgi.rs`、`game_hdr.rs`、
+`game_compat.rs`、`windows.rs`、配置状态机或 Hook 字节；因此此前双版本 HDR 实机结论仍适用。
+该机械修正后没有再次启动真实游戏，新的 DLL 哈希只对应重建产物，不能伪写成又做了一轮
+实机测试。
+
+重建后的当前发布物为：
+
+```text
+EldenRingWindowedHDR.dll SHA-256: 8CF58FD3A57CC89924EB4C044AA473B3A09A0D33B2D3B82BC6FD1B6314D1C023
+EldenRingWindowedHDR-1.0.0.zip SHA-256: 1B820B9B3C13BDFA8BDC8E1AB7EE916D7DAAABB194A687E7865D482BFD46F489
+```

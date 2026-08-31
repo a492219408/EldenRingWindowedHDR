@@ -136,6 +136,9 @@ target\x86_64-pc-windows-msvc\release\EldenRingWindowedHDR.dll
 正式 ZIP 只包含运行所需的 `.me3`、DLL、INI、英文/中文 TXT README、许可证和第三方声明；
 源码仓库中的 `docs` 与 `scripts` 不进入玩家发布包。
 
+GitHub Actions 固定使用 Rust 1.98.0，使 CI 与 Release 的 Clippy/构建结果可复现，不随浮动
+`stable` 通道自动前移而突然改变。
+
 ## ModEngine3 加载
 
 打包目录包含 `EldenRingWindowedHDR.me3`，其中明确设置：
