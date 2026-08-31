@@ -1,0 +1,19 @@
+# 本机逆向分析产物（Ghidra 数据库、缓存、反编译导出等）
+/.analysis/
+/analysis/
+
+# Rust 构建产物与本地运行日志
+/target/
+/dist/
+/test-results/
+*.log
+*.dmp
+
+# 本机 IDE 元数据
+/.idea/
+*.iml
+
+# 不提交游戏或 ModEngine3 二进制
+*.exe
+*.dll
+*.pdb

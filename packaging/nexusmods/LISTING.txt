@@ -1,0 +1,15 @@
+Mod Name
+========
+Elden Ring Native Windowed HDR
+
+Short description (TEXT, 266 characters)
+========================================
+Enables Elden Ring's native HDR rendering in Borderless Windowed and Windowed modes through ModEngine3, including in-game toggling and saved-state restoration. Requires an HDR-capable display with Windows HDR enabled and the supported game version. Offline use only.
+
+GitHub placeholder used by the Full description
+===============================================
+GITHUB_REPOSITORY_URL
+
+Cover image
+===========
+EldenRingNativeWindowedHDR-cover.png

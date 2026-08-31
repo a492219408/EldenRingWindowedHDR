@@ -1,0 +1,18 @@
+Mode: generate
+Use case: ads-marketing
+Asset type: Nexus Mods cover image, 16:9 landscape
+
+Create original premium key art for a PC game HDR utility mod. Show an entirely
+original dark-fantasy landscape through two seamless borderless window/display
+planes: subdued SDR and compressed highlights on the left, rich HDR with golden
+highlights and detailed shadows on the right. Suggest window movement across two
+HDR displays without using any game screenshot, character, creature, location,
+symbol, rune, logo, or UI. Use a cinematic, refined, high-contrast composition
+with safe crop margins and strong thumbnail readability.
+
+Render exactly once:
+NATIVE WINDOWED HDR
+FOR ELDEN RING
+
+Use crisp uppercase gold-white lettering. Add no other words, watermark,
+signature, publisher/developer logo, or official Elden Ring logo.

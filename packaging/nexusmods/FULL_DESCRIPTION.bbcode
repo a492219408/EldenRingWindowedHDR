@@ -1,0 +1,53 @@
+[center][size=6][b]Elden Ring Native Windowed HDR[/b][/size]
+[size=3]Native in-game HDR for Borderless Windowed and Windowed modes[/size][/center]
+
+[size=4][b]What this mod does[/b][/size]
+
+Elden Ring normally makes its HDR option unavailable outside fullscreen mode. This mod allows the game's [b]native HDR rendering path[/b] to work in both [b]Borderless Windowed[/b] and ordinary [b]Windowed[/b] modes.
+
+It is not a ReShade preset, color filter, or Auto HDR effect. The game's own HDR switch remains usable, the enabled/disabled state is still saved by the game, and normal SDR output is restored when HDR is turned off.
+
+[size=4][b]Requirements[/b][/size]
+
+[list]
+[*]Elden Ring App Ver. 1.17 / eldenring.exe version 2.7.0.0.
+[*]An HDR-capable display.
+[*]HDR enabled in Windows for the display showing the game.
+[*]ModEngine3.
+[*]Easy Anti-Cheat disabled and offline play only.
+[/list]
+
+[b]Important:[/b] This mod does not create HDR capabilities that your monitor or Windows installation does not have. If Windows HDR is disabled, or if the active display does not meet the required HDR conditions, the in-game HDR option will remain unavailable. That is expected behavior.
+
+[size=4][b]Installation[/b][/size]
+
+[list=1]
+[*]Extract the complete archive and keep its folder structure intact.
+[*]Load [b]EldenRingWindowedHDR.me3[/b] with ModEngine3.
+[*]Enable HDR in Windows.
+[*]Launch the game through ModEngine3.
+[*]Select Borderless Windowed or Windowed mode, then enable High Dynamic Range Rendering in the game's HDR settings.
+[/list]
+
+The included configuration already enables the normal release mode. No manual INI editing is required.
+
+[size=4][b]Safety and compatibility[/b][/size]
+
+[list]
+[*]The DLL validates the exact supported game executable before installing any hooks.
+[*]It does not modify eldenring.exe, Windows HDR settings, the registry, graphics driver settings, or save files.
+[*]If an HDR requirement is missing, the mod safely leaves HDR unavailable instead of forcing an invalid color space.
+[*]HDR/SDR toggling, saved-state restoration, ordinary windowed mode, and movement between two HDR-enabled displays have been verified on the current NVIDIA test system.
+[*]AMD, Intel, other hardware/display combinations, Windows HDR hot changes, sleep/resume, and broad Overlay/MOD combinations are not yet fully verified.
+[/list]
+
+[size=4][b]Troubleshooting[/b][/size]
+
+Make sure Windows HDR is enabled on the display showing the game. If another mod also changes DXGI color spaces or fullscreen behavior, temporarily disable it for comparison. When reporting a problem, include [b]natives/EldenRingWindowedHDR.log[/b] before launching the game again, because the log is replaced on every run.
+
+[size=4][b]Source code[/b][/size]
+
+This project is open source under the MIT License:
+[url=GITHUB_REPOSITORY_URL]GitHub source code and releases[/url]
+
+[center][b]Offline ModEngine3 use only. Do not enter official matchmaking with anti-cheat bypassed.[/b][/center]

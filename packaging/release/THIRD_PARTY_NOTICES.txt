@@ -1,0 +1,11 @@
+THIRD-PARTY SOFTWARE NOTICES
+============================
+
+Parts of src/dxgi.rs, src/windows.rs, and src/logger.rs were adapted from the
+local reference project UnlockTheFps, which is available under the MIT License:
+
+Copyright (c) 2026 YmdElf
+Copyright (c) 2025 Luca2040
+
+The applicable MIT permission terms and warranty disclaimer are reproduced in
+LICENSE.txt.
